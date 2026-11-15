@@ -1,8 +1,10 @@
 <p align="center"><img src="docs/logo.png" alt="SkyHand" width="460"></p>
 
 <p align="center"><b>Fly a drone with your hand. AI keeps it safe.</b><br>
-Rokoko Smartglove → DJI Mavic 3 Enterprise, with NVIDIA Nemotron 3.5 Super VL watching the camera.<br>
+Rokoko Smartglove → DJI Mavic 3 Enterprise, with vision-based safety from NVIDIA Nemotron 3.5 Super VL.<br>
 Junction 2026</p>
+
+<p align="center"><img src="docs/demo.gif" alt="SkyHand demo" width="760"></p>
 
 ## Quick start
 
@@ -31,7 +33,7 @@ Hold your hand **flat, palm down, fingers forward for 2 s** to calibrate. Keep t
 
 ## How it works
 
-![pipeline](docs/pipeline.png)
+![architecture](docs/architecture.png)
 
 1. **Glove**: Rokoko Smartglove streams the hand skeleton and raw IMU (~80 Hz).
 2. **Gestures**: a small per-pilot neural net turns the hand into a command (calibrated, filtered, held to trigger).
@@ -72,7 +74,7 @@ skyhand/        app: glove input, gestures, mapping, VLM client, AI mixer, sim
 scripts/        flight window, glove bridge, VLM service, AI mixer, training, checks
 models/         trained gesture model
 tests/          python3 -m pytest -q
-docs/           logo, pipeline diagram
+docs/           logo, architecture, demo GIF
 ```
 
 ## Team
