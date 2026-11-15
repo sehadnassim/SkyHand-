@@ -1,0 +1,7 @@
+numpy
+requests
+matplotlib
+lz4
+pytest
+paho-mqtt
+# ros2 backend: rclpy from your ROS 2 install
