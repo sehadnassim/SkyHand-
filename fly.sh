@@ -1,31 +1,39 @@
 #!/usr/bin/env bash
-# One command to fly SkyHand with the Rokoko glove. Works on Linux and macOS.
+# SkyHand: fly a drone with a Rokoko glove. One script for setup and flight (Linux / macOS).
 #
-#   ./fly.sh                    real drone over MQTT: the flight window with the hand cards (default)
-#                               options: --mqtt-host <ip> (default 192.168.4.18 = this Mac on the Pi Wi-Fi), --max-speed 0.3, --dry-run
-#   ./fly.sh --ai               same + VLM obstacle avoidance, all started from here (see "AI assist" below)
-#   ./fly.sh --sim              simulator + live 3D view (no drone)
-#   ./fly.sh --fake             simulator driven by a scripted fake glove (no hardware)
-#   ./fly.sh --train            record YOUR gestures and train the gesture model (--quick, --add)
-#   ./fly.sh --check            guided gesture check with the real glove (no drone)
+#   ./fly.sh                 fly the real drone (MQTT). First run creates .venv automatically.
+#   ./fly.sh --ai            + Nemotron VLA obstacle avoidance (needs VERDA_INFERENCE_KEY)
+#   ./fly.sh --dry-run       flight window, nothing sent to the drone
+#   ./fly.sh --sim           simulator, no drone
+#   ./fly.sh --fake          simulator, no glove
+#   ./fly.sh --train         record your gestures, train the model (Device SDK only)
+#   ./fly.sh --check         check the glove gestures, no drone
+#   ./fly.sh --setup         (re)create .venv
 #
-# Glove data:
-#   Linux: the Rokoko Device SDK driver + scripts/sdk_bridge.py are started automatically.
-#   macOS (or --studio): Rokoko Studio -> Livestreaming -> Custom -> JSON v3, IP 127.0.0.1, port 14043.
-#     Studio has no raw IMU data, so the finger-curl rules recognise the gestures (no trained model).
-# AI assist (--ai), everything on this machine unless it is already running:
-#   MQTT broker (mosquitto, if --mqtt-host is this machine), video server (mediamtx, drone pushes RTMP to it),
-#   scripts/vlm_service.py (VLM on the drone video -> skyhand/ai_cmd) and scripts/ai_mux.py (glove + AI -> drone/cmd_vel).
-#   API key: VERDA_INFERENCE_KEY in the environment, or ~/.verda_env (export VERDA_INFERENCE_KEY=...). Never commit it.
-#   --vlm-source URL    drone video (default rtmp://localhost:1935/live/drone)
-#   --vlm-interval S    seconds between VLM call starts (default 0.2, 0.1..5; 2 calls overlap, a call takes ~0.4 s)
-#   On a person / near obstacle the AI brakes and BACKS OFF (~0.5 m), then slides to the free side (or hovers:
-#   person / no free side). Letting go of forward ends it at once.
-#   --ai-hover-only     after backing off only hover, never slide sideways (the camera looks forward only)
+# Options: --mqtt-host IP (default 192.168.4.18)  --vlm-source URL  --vlm-interval S (0.1..5)
+#          --ai-hover-only  --studio (use Rokoko Studio instead of the Device SDK)
 # Logs: /tmp/skyhand-*.log
 set -eo pipefail
 cd "$(dirname "$0")"
-[ -x .venv/bin/python ] && export PATH="$PWD/.venv/bin:$PATH"
+
+case " $* " in *" --help "*|*" -h "*) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
+
+setup_venv() {
+  local py=${PYTHON:-python3}
+  "$py" -c 'import sys; assert sys.version_info >= (3, 9)' 2>/dev/null || { echo "[fly] need Python 3.9+"; exit 1; }
+  "$py" -c 'import tkinter' 2>/dev/null || {
+    echo "[fly] tkinter missing. mac: brew install python-tk   linux: sudo apt install python3-tk"; exit 1; }
+  echo "[fly] creating .venv ..."
+  "$py" -m venv .venv
+  .venv/bin/pip install -q --upgrade pip
+  .venv/bin/pip install -q -r requirements.txt
+  echo "[fly] .venv ready"
+}
+if [ ! -x .venv/bin/python ] || [[ " $* " == *" --setup "* ]]; then
+  setup_venv
+  [[ " $* " == *" --setup "* ]] && exit 0
+fi
+export PATH="$PWD/.venv/bin:$PATH"
 
 mode=safe; studio=0; pass=(); targs=()
 ai=0; vlm_source="rtmp://localhost:1935/live/drone"; vlm_interval=0.2; ai_slide=1; mqtt_host=192.168.4.18

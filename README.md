@@ -1,210 +1,80 @@
-# SkyHand
+<p align="center"><img src="docs/logo.png" alt="SkyHand" width="460"></p>
 
-Fly a drone with a Rokoko Smartglove. The hand flies the drone directly. A small local LLM turns a typed
-mission into a plan, and the hand approves it, pauses it or takes over.
+<p align="center"><b>Fly a drone with your hand. AI keeps it safe.</b><br>
+Rokoko Smartglove → DJI Mavic 3 Enterprise, with NVIDIA Nemotron 3.5 Super VL watching the camera.<br>
+Junction 2026</p>
 
-Junction 2026, Rokoko Robot Teleoperation Challenge. Flies a real drone over MQTT, with optional cloud VLM
-obstacle avoidance. New machine (Mac or Linux): see [MAC_SETUP.md](MAC_SETUP.md).
-
-## Run
+## Quick start
 
 ```bash
-./setup_venv.sh         # once: creates .venv (fly.sh uses it automatically)
-./fly.sh                # REAL DRONE: flight window with hand cards, MQTT to 192.168.4.2 (--mqtt-host, --dry-run)
-./fly.sh --ai           # same + VLM obstacle avoidance (drone runs scripts/ai_mux.py, cloud runs scripts/vlm_service.py)
-./fly.sh --sim          # simulator with 3D view, no drone
-./fly.sh --fake         # simulator, no glove
-./fly.sh --train        # record your gestures and train the NN (Linux / Device SDK)
-python3 -m pytest -q    # tests
+git clone https://github.com/sehadnassim/SkyHand- skyhand && cd skyhand
+./fly.sh --dry-run     # first run sets everything up; window opens, nothing is sent
+./fly.sh               # fly the real drone
+./fly.sh --ai          # + obstacle avoidance
 ```
 
-Flight window gestures (right hand, palm down): thumbs up 1 s = take off, open hand tilt = forward/back,
-peace + roll = turn, index pointed up/down = up/down a bit, fist or pinky 1 s = land, Esc = land.
+Other modes: `--sim` (no drone), `--fake` (no glove), `--train` (record your gestures), `--check` (test the glove).
+`./fly.sh --help` lists every option.
 
-## Pipeline
+Hold your hand **flat, palm down, fingers forward for 2 s** to calibrate. Keep the DJI remote as the emergency stop.
+
+## Gestures (right hand, palm down)
+
+| Gesture | Drone |
+|---|---|
+| thumbs up, hold 1 s | take off |
+| open hand, tilt down / up | forward / back |
+| peace sign, roll right / left | turn right / left |
+| index up / down | up / down a bit |
+| fist or pinky, hold 1 s | land |
+| Esc or LAND button | land |
+
+## How it works
 
 ![pipeline](docs/pipeline.png)
 
-Source: [docs/pipeline.tex](docs/pipeline.tex) (TikZ). Rebuild: `tectonic docs/pipeline.tex && pdftoppm -png -r 150 -singlefile docs/pipeline.pdf docs/pipeline`.
+1. **Glove**: Rokoko Smartglove streams the hand skeleton and raw IMU (~80 Hz).
+2. **Gestures**: a small per-pilot neural net turns the hand into a command (calibrated, filtered, held to trigger).
+3. **VLA**: Nemotron 3.5 Super VL processes the drone camera at 5 Hz and outputs continue / avoid left / avoid right / stop, with a short reason (~0.4 s per decision).
+4. **Safety mixer**: merges pilot and AI into one velocity. The AI can brake, back off and slide aside. Landing always stays with the pilot.
+5. **Drone**: MQTT to a Raspberry Pi on the Mavic 3 Enterprise (DJI Payload SDK).
 
-Text version:
+## AI assist (`--ai`)
 
-```
-Smartglove II (USB)
-  -> rokoko-sdk driver     raw IMU per sensor: acc, gyro, position          port 12276
-  -> rkk-hand-solver       hand skeleton: bone rotations                    port 12277
-  -> scripts/sdk_bridge.py skeleton + raw IMU as JSON, ~80 Hz per hand      UDP 14043
-  -> skyhand/app.py        30 Hz loop:
-        calibration + features -> gesture NN -> gesture filter -> motion mapping -> velocity cmd -> sim
-                                                  ^
-        typed mission -> LLM -> plan check -> waits for thumbs up -> plan runner
+```bash
+export VERDA_INFERENCE_KEY=...   # or put it in ~/.verda_env. Never commit it.
+./fly.sh --ai --mqtt-host <broker-ip>
 ```
 
-## 1. Preprocessing
+`fly.sh` starts what is missing locally: MQTT broker (mosquitto), video server (mediamtx, the drone pushes RTMP),
+`scripts/vlm_service.py` and `scripts/ai_mux.py`. Tick **AI assist** in the window.
+Test the model on photos first: `python3 scripts/vlm_avoid_check.py --images <dir>`.
 
-- Calibration: the flat hand held for 2 s is the zero pose. Tilt, roll and turn are measured relative to it.
-  `c` in the terminal recalibrates.
-- NN input, 84 numbers per frame:
+## Glove setup
 
-  | Part | Size | What |
-  |---|---|---|
-  | finger bones | 45 | 15 bones x rotation relative to the parent bone. Same value whatever way the hand faces |
-  | gravity per sensor | 21 | 7 sensors (hub, arm, 5 fingers), accelerometer normalized to a direction |
-  | finger sensor positions | 18 | 6 sensors relative to the hub, in dm. Comes from the IMU, not the solver |
+- **Linux**: install the Rokoko Device SDK. `fly.sh` starts the driver and bridge and uses `models/gestures.npz`.
+- **macOS**: Rokoko Studio → Livestreaming → Custom → JSON v3, `127.0.0.1:14043`. Gestures use finger-curl rules.
 
-- Each feature is standardized with the mean/std of the training data.
+## Troubleshooting
 
-## 2. Gesture NN
-
-- Small numpy net: 84 -> 32 tanh -> softmax over 7 shapes. Adam, 400 epochs, L2, plus noise on the
-  inputs during training so it copes with sensor jitter. Per pilot, no pretrained model.
-- Data: `./fly.sh --train`, see "Collecting data" below. Current set: 1248 frames, 7 shapes, 2 rounds.
-  Trained on round 1, tested on round 2: 100%.
-- Runtime: confidence below 0.7 = no gesture = hover. A shape must be stable for 0.12 s to count,
-  and held 1 s to trigger an action (take off, approve).
-- Simple mode (default in sim) only uses the 4 shapes that are furthest apart in the data.
-  Point, pinky and fist were too close to each other (about 4 vs 10+ for the others), so they are off.
-- Other classifiers on the same data (other round as test): logistic regression 100%, SVM 100%,
-  random forest 100%, kNN 100% but 22 ms/frame, gradient boosting 48%. The data is easy, so the model
-  choice barely matters. More varied data matters more.
-- PCA (SVD of the standardized features) is only used to plot the clusters. Not as a classifier, it
-  only reduces dimensions. LDA, its supervised cousin, hit 100% but broke with noise.
-
-Collecting data (`scripts/train_gestures.py`, `skyhand/gesture_select.py`):
-
-| Flag | What you record |
+| Problem | Fix |
 |---|---|
-| (none) | 11 candidate gestures x 6 hand poses, 2.5 s each, ~5 min |
-| `--quick` | same, only the flat and tilt poses |
-| `--add` | loads old data, asks only for weak or missing (pose, gesture) combos |
-| `--gestures=open,fist` | only these |
+| `tkinter missing` | mac `brew install python-tk`, linux `sudo apt install python3-tk`, then `./fly.sh --setup` |
+| cards stay dark, "no glove" | Studio streaming off, wrong port (14043) or format (JSON v3) |
+| "NOT CONNECTED" | wrong `--mqtt-host`, broker not running, or not on the drone Wi-Fi |
+| `--train` fails on Mac | expected: training needs the Device SDK |
 
-- Poses: flat, tilt, on its side, palm up, arm high/low, arm moving. This catches a gesture that only
-  works palm down.
-- Candidates: the 7 above plus call (thumb + little), gun (thumb + index), three, and relax
-  (loose hand). Relax is trained as "no command", so a resting hand doesn't trigger anything.
-- After recording:
-  1. Each pose is left out once and predicted by a model trained on the other poses.
-  2. Frames that clearly look like another gesture are dropped (transitions), max 15% per gesture.
-  3. Gestures that get mixed up more than 3% with a kept one are dropped. Open, fist, thumbs up and
-     peace are always kept (the app needs them) and get a warning instead.
-  4. The weak combos are printed, and `--add` asks for those next time.
-  5. Cluster plot saved to `recordings/gesture_clusters_*.png`.
-- Gestures the app has no action for (call, gun, three) are recognized, but give "no gesture" for now.
-
-## 3. Hand -> drone
-
-| Hand | Drone |
-|---|---|
-| open hand, tilt forward / back | fly forward / back. Full speed (1.5 m/s) at 35 deg, 15% dead zone |
-| peace sign, roll right / left | turn right / left, up to 1 rad/s |
-| fist | stop, hover |
-| thumbs up 1 s | take off, or land when flying |
-
-Only one motion at a time (axis lock). It frees up when the hand is flat again. Commands are smoothed.
-Sideways and up/down are off in simple mode because they kept firing together with forward/turn.
-
-Riding a shape (after a `path` plan is approved). The shape is exact, from code. The hand sets the pace:
-
-| Hand | Drone |
-|---|---|
-| open hand, tilt forward / back | go along the shape / back along it, up to 1 m/s |
-| flat hand | hold on the shape |
-| peace sign, roll | shift the whole shape sideways |
-| fist | pause (see 5) |
-
-The drone faces the way the path goes. If it falls more than 0.6 m behind, the path waits for it.
-In the sim it stays about 5 cm off the line on average (max ~0.2 m).
-
-## 4. LLM copilot
-
-- Model: `qwen2.5:1.5b` running locally in Ollama. No internet. About 0.2 s per answer.
-- Input: the typed mission + drone state (flying or not, altitude). Typed in the box at the bottom of the
-  sim window.
-- Output: JSON plan using only known steps: take off, land, hover, move, turn, orbit, go where I point,
-  go to waypoint, path (shape + size). Short prompt with examples, temperature 0, output forced to a JSON schema.
-- Checks after the LLM: unknown steps dropped, moves clamped to 8 m, altitude to 5 m. If the LLM copies a
-  number from the examples instead of yours, your number is put back.
-- Edits like "bigger", "smaller", "again", "1 m higher", "other way" are done by plain rules on the last
-  plan. The 1.5B model was bad at editing.
-- If Ollama is down, a regex parser answers instead.
-- Shapes: the LLM can't draw (asked for figure 8 / heart points it wrote circles), so it only picks a name
-  from `skyhand/shapes.py`: circle, figure8, square, triangle, zigzag, spiral, heart. Size 0.5 to 6 m.
-  If the text names a shape and the plan misses it, code puts it in (it wrote 4 moves for "square").
-- Score on 20 test missions: qwen2.5:1.5b 20, llama3.2:1b 14, regex parser 14.
-
-## 5. Human in the loop
-
-| When | Hand | Result |
-|---|---|---|
-| plan proposed | thumbs up | fly it. Nothing moves before this |
-| plan proposed | fist | cancel. No answer in 20 s = cancelled too |
-| plan flying | fist | pause, hover, plan kept |
-| paused | thumbs up | continue |
-| paused | fist held 2 s | abort plan. Thumbs up then lands |
-| plan flying | tilt open hand | plan stops, you fly (not during a shape, there tilt = pace) |
-| glove lost | - | plan stops, hover |
-
-The LLM never sends velocities. It only proposes, the hand decides.
-
-## 6. Folder structure
+## Repo
 
 ```
-glove-drone-teleop/
-├── fly.sh                  starts driver/bridge (Linux) or uses Rokoko Studio (Mac), then the app
-├── setup_venv.sh           creates .venv
-├── MAC_SETUP.md            setup + run on a new machine
-├── requirements.txt
-├── skyhand/                main app
-│   ├── app.py              30 Hz loop, approve / pause / abort logic
-│   ├── rokoko.py           UDP receiver for glove frames
-│   ├── sdk_convert.py      SDK skeleton -> our hand format
-│   ├── sdk_raw.py          raw IMU parsing
-│   ├── hand.py             calibration, tilt / roll / yaw, finger bend
-│   ├── quat.py             quaternion helpers
-│   ├── gesture_model.py    84 features + NN
-│   ├── gesture_select.py   what to record, drop bad frames and look-alike gestures
-│   ├── gestures.py         stable / hold filter
-│   ├── mapping.py          hand -> velocity, dead zone, axis lock
-│   ├── llm.py              LLM prompt, checks, edit rules, fallback parser
-│   ├── planner.py          allowed steps, limits, plan runner
-│   ├── shapes.py           shape library, exact points every 5 cm
-│   ├── ride.py             hand-driven path follower
-│   ├── sketch.py           air drawing (older feature)
-│   ├── viz.py              sim window, mission box
-│   ├── hand_icons.py       gesture icons in the window
-│   ├── train_gui.py        window for gesture recording
-│   ├── recorder.py         JSONL flight logs (--record)
-│   ├── fake_glove.py       fake hand for --fake
-│   ├── vlm.py              VLM client: obstacle check on a camera frame
-│   ├── ai_mix.py           pilot + AI mixer rules (pilot always wins)
-│   └── drones/             outputs: sim.py, mqtt.py, udp.py, ros2.py
-├── scripts/
-│   ├── sdk_bridge.py       Rokoko SDK -> UDP JSON, adds raw IMU
-│   ├── train_gestures.py   record gestures + train the NN
-│   ├── safe_fly_v2.py      the real-drone flight window (./fly.sh)
-│   ├── safe_takeoff.py     MQTT link + colours used by the window
-│   ├── ai_mux.py           runs on the drone: mixes glove + AI velocity
-│   ├── vlm_service.py      runs in the cloud: camera stream -> VLM -> skyhand/ai_cmd
-│   ├── vlm_avoid_check.py  VLM accuracy/latency check on scenes or photos
-│   ├── glove_check.py      quick "is the glove streaming" check
-│   └── fake_glove.py
-├── models/gestures.npz     trained gesture NN
-├── tests/                  pytest
-├── docs/pipeline.tex/.pdf/.png  pipeline diagram (TikZ)
-└── recordings/             gesture data + flight logs (not in git)
+fly.sh          setup + every run mode
+skyhand/        app: glove input, gestures, mapping, VLM client, AI mixer, sim
+scripts/        flight window, glove bridge, VLM service, AI mixer, training, checks
+models/         trained gesture model
+tests/          python3 -m pytest -q
+docs/           logo, pipeline diagram
 ```
 
-## 7. Demo
+## Team
 
-`./fly.sh --sim`, calibrate, thumbs up to take off, type `fly a figure 8` (or `heart`, `3 m spiral`,
-`take off, square, then land`), thumbs up, tilt to drive it. Fist to pause, `bigger` / `again` to edit.
-
-## 8. TODO
-
-- [ ] Record the full sweep (`./fly.sh --train`), then `--add` until no weak spots are left.
-- [ ] Record a second session on another day / after taking the glove off (fist already shifts between
-      sessions, see the cluster plot).
-- [ ] Record a second pilot and check how much a model from one pilot works for the other.
-- [ ] Give call / gun / three an action if they survive the filter.
-- [ ] Motion gestures (swipe, circle) need a model over time (GRU or 1D CNN in PyTorch).
+Hakim (PhD, Robotics) · Nassim (PhD, Telecom) · Hamza (Doctoral candidate, Robotics)
