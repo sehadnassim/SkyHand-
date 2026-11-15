@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SkyHand: reliable drone teleoperation with a VLA</title>
+<meta name="description" content="Fly a drone with a smart glove. NVIDIA Nemotron 3.5 Super VL keeps it safe.">
+<link rel="icon" href="logo.png">
+<style>
+  :root { --g: #76B900; --muted: #a6a6a6; --card: #141414; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; color: #fff; font: 17px/1.55 Arial, Helvetica, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 64px 0; border-top: 1px solid #1c1c1c; }
+  section:first-child { border-top: 0; }
+  h1, h2, h3 { margin: 0 0 16px; line-height: 1.2; }
+  h2 { font-size: 34px; }
+  h3 { font-size: 21px; color: var(--g); }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  .green { color: var(--g); }
+  a { color: var(--g); }
+  img, video { max-width: 100%; display: block; border-radius: 6px; }
+  .hero { text-align: center; padding: 80px 0 56px; }
+  .hero img.logo { width: 440px; margin: 0 auto 24px; border-radius: 0; }
+  .hero .tag { font-size: 24px; margin-bottom: 8px; }
+  .btn { display: inline-block; margin-top: 20px; padding: 10px 22px; border: 1px solid var(--g);
+         border-radius: 6px; text-decoration: none; }
+  .row { display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
+  .row > * { flex: 1 1 260px; }
+  .row img { max-height: 380px; width: auto; margin: 0 auto; }
+  .arrow { flex: 0 0 auto; color: var(--g); font-size: 40px; }
+  .cap { font-size: 14px; color: var(--muted); margin-top: 8px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+  .card { background: var(--card); border-radius: 8px; padding: 24px; }
+  .card q { display: block; margin-top: 14px; color: var(--muted); font-style: italic; font-size: 15px; }
+  .demo { margin-bottom: 48px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px; }
+  .stat b { display: block; font-size: 40px; color: var(--g); }
+  .team { display: flex; justify-content: center; gap: 56px; flex-wrap: wrap; text-align: center; }
+  .team img { width: 150px; height: 150px; border-radius: 50%; margin: 0 auto 12px; }
+  footer { text-align: center; padding: 40px 0 56px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+
+  <section class="hero">
+    <img class="logo" src="logo.png" alt="SkyHand">
+    <p class="tag">Reliable robot teleoperation, made safe by a vision-language-action model.</p>
+    <p class="muted">The operator gives the intent with a smart glove. NVIDIA Nemotron 3.5 Super VL keeps the drone safe.</p>
+    <a class="btn" href="https://github.com/sehadnassim/SkyHand-">View the code on GitHub</a>
+  </section>
+
+  <section>
+    <h2>No joysticks. Pure intuition</h2>
+    <div class="row">
+      <div><img src="media/pilot.jpg" alt="Operator wearing the Rokoko glove"><div class="cap">Rokoko Smartgloves</div></div>
+      <div class="arrow">→</div>
+      <div style="flex:2 1 360px"><img src="media/drone.jpg" alt="DJI Mavic 3 Enterprise with Raspberry Pi"><div class="cap">DJI Mavic 3 Enterprise + Raspberry Pi</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How it works</h2>
+    <img src="architecture.png" alt="Glove, gestures, safety mixer, drone, with the VLA reading the drone camera">
+    <p class="muted" style="margin-top:16px">The glove streams the hand pose and a gesture model turns it into commands.
+      Nemotron 3.5 Super VL processes the camera feed at 5 Hz and outputs continue, avoid left, avoid right or stop.
+      The safety mixer merges both. Landing always stays with the operator.</p>
+  </section>
+
+  <section>
+    <h2>Why a VLA and not just a distance sensor</h2>
+    <div class="cards">
+      <div class="card"><h3>Safety</h3>Stops or steers before contact, even when the operator keeps pushing.<q>Banner blocks center, pass on right</q></div>
+      <div class="card"><h3>Adapts</h3>Banner, table, curtain, person. No retraining for new obstacles.<q>Curtain is far ahead, path is clear</q></div>
+      <div class="card"><h3>Reads people</h3>Tells a person from a poster, and near from far.<q>A real person is directly ahead in the path</q></div>
+    </div>
+    <p class="cap">Quotes are real model outputs from our flights.</p>
+  </section>
+
+  <section>
+    <h2>Results</h2>
+    <div class="demo">
+      <h3>1 · Flying a square</h3>
+      <p class="muted">Hand gestures only. The VLA has nothing to do.</p>
+      <video src="media/demo1.mp4" poster="media/demo1.jpg" controls muted playsinline preload="none"></video>
+    </div>
+    <div class="demo">
+      <h3>2 · Static obstacle</h3>
+      <p class="muted">The operator pushes forward. The VLA sees the banner, takes over and slides right.</p>
+      <video src="media/demo2.mp4" poster="media/demo2.jpg" controls muted playsinline preload="none"></video>
+    </div>
+    <div class="demo">
+      <h3>3 · Person in the way</h3>
+      <p class="muted">The drone stops, backs off and moves aside. The operator lands.</p>
+      <video src="media/demo3.mp4" poster="media/demo3.jpg" controls muted playsinline preload="none"></video>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>7</b><span class="muted">gestures to learn</span></div>
+      <div class="stat"><b>5 Hz</b><span class="muted">VLA safety check</span></div>
+      <div class="stat"><b>~0.4 s</b><span class="muted">VLA decision time</span></div>
+      <div class="stat"><b>2 / 2</b><span class="muted">obstacles avoided</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 style="text-align:center">The human gives the intent. <span class="green">The model makes it safe.</span></h2>
+  </section>
+
+  <section>
+    <h2 style="text-align:center; margin-bottom:32px">Team</h2>
+    <div class="team">
+      <div><img src="media/hakim.png" alt="Hakim"><b>Hakim</b><div class="muted">PhD, Robotics</div></div>
+      <div><img src="media/nassim.png" alt="Nassim"><b>Nassim</b><div class="muted">PhD, Telecom</div></div>
+      <div><img src="media/hamza.png" alt="Hamza"><b>Hamza</b><div class="muted">Doctoral candidate, Robotics</div></div>
+    </div>
+  </section>
+
+</main>
+<footer>Built at Junction 2026 · <a href="https://github.com/sehadnassim/SkyHand-">github.com/sehadnassim/SkyHand-</a></footer>
+</body>
+</html>
