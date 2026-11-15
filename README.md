@@ -1,8 +1,6 @@
 <p align="center"><img src="docs/logo.png" alt="SkyHand" width="460"></p>
 
-<p align="center"><b>Fly a drone with your hand. AI keeps it safe.</b><br>
-Rokoko Smartglove → DJI Mavic 3 Enterprise, with vision-based safety from NVIDIA Nemotron 3.5 Super VL.<br>
-Junction 2026</p>
+<h3 align="center">Fly a drone with your hand. AI keeps it safe.</h3>
 
 <p align="center"><img src="docs/demo.gif" alt="SkyHand demo" width="760"></p>
 
@@ -80,3 +78,5 @@ docs/           logo, architecture, demo GIF
 ## Team
 
 Hakim (PhD, Robotics) · Nassim (PhD, Telecom) · Hamza (Doctoral candidate, Robotics)
+
+Built at Junction 2026.
